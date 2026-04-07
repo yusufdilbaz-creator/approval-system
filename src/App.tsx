@@ -9,15 +9,91 @@ type RequestRow = {
   created_at: string | null;
 };
 
+type SessionUser = {
+  id: string;
+  email?: string;
+};
+
 export default function App() {
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [text, setText] = useState("");
   const [amount, setAmount] = useState("");
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+      setLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function signUp() {
+    setAuthMessage("");
+
+    if (!email || !password) {
+      setAuthMessage("Email and password are required.");
+      return;
+    }
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      setAuthMessage("Signup error: " + error.message);
+      return;
+    }
+
+    setAuthMessage("Signup successful. You can now sign in.");
+  }
+
+  async function signIn() {
+    setAuthMessage("");
+
+    if (!email || !password) {
+      setAuthMessage("Email and password are required.");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setAuthMessage("Login error: " + error.message);
+      return;
+    }
+
+    setAuthMessage("Login successful.");
+    loadRequests();
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setRequests([]);
+    setMessage("");
+  }
+
   async function loadRequests() {
-    setLoading(true);
     setMessage("");
 
     const { data, error } = await supabase
@@ -27,12 +103,10 @@ export default function App() {
 
     if (error) {
       setMessage("Error loading requests: " + error.message);
-      setLoading(false);
       return;
     }
 
     setRequests(data || []);
-    setLoading(false);
   }
 
   async function addRequest() {
@@ -73,13 +147,62 @@ export default function App() {
   }
 
   useEffect(() => {
-    loadRequests();
-  }, []);
+    if (user) {
+      loadRequests();
+    }
+  }, [user]);
+
+  if (loading) {
+    return <div style={{ padding: 40 }}>Loading...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div style={{ padding: 40, maxWidth: 500, margin: "0 auto" }}>
+        <h1>Approval System Login</h1>
+        <p>Please sign up or sign in.</p>
+
+        <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
+          <input
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{ padding: 10 }}
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ padding: 10 }}
+          />
+
+          <button onClick={signUp} style={{ padding: 10, cursor: "pointer" }}>
+            Sign Up
+          </button>
+
+          <button onClick={signIn} style={{ padding: 10, cursor: "pointer" }}>
+            Sign In
+          </button>
+        </div>
+
+        {authMessage ? <p style={{ marginTop: 16 }}><strong>{authMessage}</strong></p> : null}
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 40, maxWidth: 900, margin: "0 auto" }}>
-      <h1>Approval System 🚀</h1>
-      <p>This version is connected to Supabase.</p>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+        <div>
+          <h1>Approval System 🚀</h1>
+          <p>Logged in as: {user.email}</p>
+        </div>
+        <button onClick={signOut} style={{ padding: 10, cursor: "pointer" }}>
+          Sign Out
+        </button>
+      </div>
 
       <div style={{ display: "grid", gap: 12, marginTop: 20, marginBottom: 20 }}>
         <input
@@ -102,7 +225,6 @@ export default function App() {
       </div>
 
       {message ? <p><strong>{message}</strong></p> : null}
-      {loading ? <p>Loading...</p> : null}
 
       <h2>Requests</h2>
 
